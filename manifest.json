@@ -28,6 +28,7 @@
   "permissions": [
     "activeTab",
     "contextMenus",
+    "declarativeNetRequestWithHostAccess",
     "identity",
     "offscreen",
     "scripting",
