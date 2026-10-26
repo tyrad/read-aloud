@@ -179,6 +179,7 @@ const voices$ = rxjs.combineLatest({
     settings.gcpCreds ? googleWavenetTtsEngine.getVoices() : googleWavenetTtsEngine.getFreeVoices(),
     settings.ibmCreds ? ibmWatsonTtsEngine.getVoices() : [],
     settings.azureCreds ? azureTtsEngine.getVoices() : [],
+    edgeTtsEngine.getVoices(),
     premiumTtsEngine.getVoices(),
   ])),
   rxjs.map(arr => arr.flat()),
@@ -271,6 +272,10 @@ function isAzure(voice) {
   return /^Azure /.test(voice.voiceName);
 }
 
+function isEdgeVoice(voice) {
+  return /^Edge /.test(voice.voiceName);
+}
+
 function isPiperVoice(voice) {
   return /^Piper /.test(voice.voiceName)
 }
@@ -307,6 +312,7 @@ function isNativeVoice(voice) {
     || isIbmWatson(voice)
     || isOpenai(voice)
     || isAzure(voice)
+    || isEdgeVoice(voice)
   )
 }
 

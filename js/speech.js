@@ -37,6 +37,7 @@ function Speech(texts, options) {
     if (isSupertonicVoice(options.voice)) return supertonicTtsEngine;
     if (isPocketTtsVoice(options.voice)) return pocketTtsEngine;
     if (isNghiTtsVoice(options.voice)) return nghiTtsEngine;
+    if (isEdgeVoice(options.voice)) return edgeTtsEngine;
     if (isAzure(options.voice)) return azureTtsEngine;
     if (isOpenai(options.voice)) return openaiTtsEngine;
     if (isUseMyPhone(options.voice)) return phoneTtsEngine;

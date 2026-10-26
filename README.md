@@ -154,6 +154,7 @@ supporting both service-worker and script-based background implementations.
 | Fork | Added Features |
 |------|---------------|
 | [praharshbhatt/read-aloud](https://github.com/praharshbhatt/read-aloud) | ElevenLabs voice support |
+| [tyrad/read-aloud](https://github.com/tyrad/read-aloud) | Free Microsoft Edge TTS support (no API key required) |
 
 
 ## Credits

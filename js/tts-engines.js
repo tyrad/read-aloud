@@ -8,6 +8,7 @@ var ibmWatsonTtsEngine = new IbmWatsonTtsEngine();
 var phoneTtsEngine = new PhoneTtsEngine();
 var openaiTtsEngine = new OpenaiTtsEngine();
 var azureTtsEngine = new AzureTtsEngine();
+var edgeTtsEngine = new EdgeTtsEngine();
 const piperTtsEngine = new PiperTtsEngine()
 const supertonicTtsEngine = new SupertonicTtsEngine()
 const pocketTtsEngine = new PocketTtsEngine()
@@ -1108,6 +1109,170 @@ function AzureTtsEngine() {
       },
       blobUrl => URL.revokeObjectURL(blobUrl)
     )
+  }
+}
+
+
+function EdgeTtsEngine() {
+  this.speak = function(utterance, options, playbackState$) {
+    const urlPromise = getAudioUrl(utterance, options)
+    return playAudio(urlPromise, options, playbackState$)
+  };
+  this.prefetch = function(utterance, options) {
+    getAudioUrl(utterance, options)
+      .catch(console.error)
+  };
+  this.getVoices = async function() {
+    try {
+      const {edgeVoices} = await getSettings(["edgeVoices"])
+      if (edgeVoices && edgeVoices.expire > Date.now()) return edgeVoices.list
+      const list = await this.fetchVoices()
+      await updateSettings({edgeVoices: {list, expire: Date.now() + 24*3600*1000}})
+      return list
+    }
+    catch (err) {
+      console.error(err)
+      return this.getDefaultVoices()
+    }
+  }
+  this.fetchVoices = async function() {
+    const res = await fetch("https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4")
+    if (!res.ok) throw new Error("Server return " + res.status)
+    const voices = await res.json()
+    return voices
+      .filter(item => item.ShortName && item.Locale)
+      .map(item => {
+        const shortName = item.ShortName
+        const nameParts = shortName.split("-")
+        const name = nameParts.length >= 3 ? nameParts[2] : shortName
+        return {
+          voiceName: "Edge " + item.FriendlyName,
+          lang: item.Locale,
+          gender: item.Gender == "Male" ? "male" : "female",
+          shortName: shortName
+        }
+      })
+  }
+  this.getDefaultVoices = function() {
+    return [
+      {voiceName: "Edge Xiaoxiao - Chinese (Mainland)", lang: "zh-CN", gender: "female", shortName: "zh-CN-XiaoxiaoNeural"},
+      {voiceName: "Edge Yunyang - Chinese (Mainland)", lang: "zh-CN", gender: "male", shortName: "zh-CN-YunyangNeural"},
+      {voiceName: "Edge Xiaoyi - Chinese (Mainland)", lang: "zh-CN", gender: "female", shortName: "zh-CN-XiaoyiNeural"},
+      {voiceName: "Edge Yunjian - Chinese (Mainland)", lang: "zh-CN", gender: "male", shortName: "zh-CN-YunjianNeural"},
+      {voiceName: "Edge Yunxi - Chinese (Mainland)", lang: "zh-CN", gender: "male", shortName: "zh-CN-YunxiNeural"},
+      {voiceName: "Edge Yunxia - Chinese (Mainland)", lang: "zh-CN", gender: "male", shortName: "zh-CN-YunxiaNeural"},
+      {voiceName: "Edge Xiaoxuan - Chinese (Mainland, Liaoning)", lang: "zh-CN-liaoning", gender: "female", shortName: "zh-CN-liaoning-XiaobeiNeural"},
+      {voiceName: "Edge Xiaohan - Chinese (Mainland, Shaanxi)", lang: "zh-CN-shaanxi", gender: "female", shortName: "zh-CN-shaanxi-XiaoniNeural"},
+      {voiceName: "Edge HiuGaai - Chinese (Hong Kong)", lang: "zh-HK", gender: "female", shortName: "zh-HK-HiuGaaiNeural"},
+      {voiceName: "Edge WanLung - Chinese (Hong Kong)", lang: "zh-HK", gender: "male", shortName: "zh-HK-WanLungNeural"},
+      {voiceName: "Edge HsiaoChen - Chinese (Taiwan)", lang: "zh-TW", gender: "female", shortName: "zh-TW-HsiaoChenNeural"},
+      {voiceName: "Edge YunJhe - Chinese (Taiwan)", lang: "zh-TW", gender: "male", shortName: "zh-TW-YunJheNeural"},
+      {voiceName: "Edge Aria - English (United States)", lang: "en-US", gender: "female", shortName: "en-US-AriaNeural"},
+      {voiceName: "Edge Jenny - English (United States)", lang: "en-US", gender: "female", shortName: "en-US-JennyNeural"},
+      {voiceName: "Edge Guy - English (United States)", lang: "en-US", gender: "male", shortName: "en-US-GuyNeural"},
+      {voiceName: "Edge Davis - English (United States)", lang: "en-US", gender: "male", shortName: "en-US-DavisNeural"},
+      {voiceName: "Edge Jane - English (United States)", lang: "en-US", gender: "female", shortName: "en-US-JaneNeural"},
+      {voiceName: "Edge Jason - English (United States)", lang: "en-US", gender: "male", shortName: "en-US-JasonNeural"},
+      {voiceName: "Edge Sara - English (United States)", lang: "en-US", gender: "female", shortName: "en-US-SaraNeural"},
+      {voiceName: "Edge Tony - English (United States)", lang: "en-US", gender: "male", shortName: "en-US-TonyNeural"},
+      {voiceName: "Edge Sonia - English (United Kingdom)", lang: "en-GB", gender: "female", shortName: "en-GB-SoniaNeural"},
+      {voiceName: "Edge Ryan - English (United Kingdom)", lang: "en-GB", gender: "male", shortName: "en-GB-RyanNeural"},
+      {voiceName: "Edge Natasha - English (Australia)", lang: "en-AU", gender: "female", shortName: "en-AU-NatashaNeural"},
+      {voiceName: "Edge William - English (Australia)", lang: "en-AU", gender: "male", shortName: "en-AU-WilliamNeural"},
+      {voiceName: "Edge Clara - English (Canada)", lang: "en-CA", gender: "female", shortName: "en-CA-ClaraNeural"},
+      {voiceName: "Edge Liam - English (Canada)", lang: "en-CA", gender: "male", shortName: "en-CA-LiamNeural"},
+    ]
+  }
+  function getAudioUrl(text, {voice}) {
+    const shortName = voice.shortName || voice.voiceName.replace(/^Edge /, "").replace(/ - .*$/, "")
+    return cache.fetchCached(
+      JSON.stringify(["edge", text, shortName]),
+      async () => {
+        const audioData = await synthesizeSpeech(text, shortName)
+        return URL.createObjectURL(audioData)
+      },
+      blobUrl => URL.revokeObjectURL(blobUrl)
+    )
+  }
+  async function synthesizeSpeech(text, voiceName) {
+    const requestId = generateRequestId()
+    const timestamp = new Date().toISOString()
+    
+    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
+      <voice name='${voiceName}'>${escapeXml(text)}</voice>
+    </speak>`
+
+    const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=${requestId}`
+    
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl)
+      const audioChunks = []
+      let timeout
+
+      ws.onopen = () => {
+        timeout = setTimeout(() => {
+          ws.close()
+          reject(new Error("WebSocket timeout"))
+        }, 30000)
+
+        const configMessage = `Path: speech.config\r\nX-Timestamp: ${timestamp}\r\nContent-Type: application/json\r\n\r\n{"context":{"system":{"name":"SpeechSDK","version":"1.12.1-rc.1","build":"JavaScript","lang":"JavaScript"},"os":{"platform":"Browser/Linux x86_64","name":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36","version":"5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"}}}`
+        ws.send(configMessage)
+
+        const ssmlMessage = `Path: ssml\r\nX-RequestId: ${requestId}\r\nX-Timestamp: ${timestamp}\r\nContent-Type: application/ssml+xml\r\n\r\n${ssml}`
+        ws.send(ssmlMessage)
+      }
+
+      ws.onmessage = (event) => {
+        if (typeof event.data === "string") {
+          const match = event.data.match(/Path:audio\r\n/)
+          if (match) {
+            if (event.data.includes("Path:turn.end")) {
+              clearTimeout(timeout)
+              ws.close()
+              if (audioChunks.length > 0) {
+                const audioBlob = new Blob(audioChunks, {type: "audio/mp3"})
+                resolve(audioBlob)
+              } else {
+                reject(new Error("No audio data received"))
+              }
+            }
+          }
+        } else {
+          const headerEndIndex = findHeaderEnd(event.data)
+          if (headerEndIndex > 0) {
+            const audioData = event.data.slice(headerEndIndex)
+            audioChunks.push(audioData)
+          }
+        }
+      }
+
+      ws.onerror = (error) => {
+        clearTimeout(timeout)
+        reject(new Error("WebSocket error: " + error.message))
+      }
+
+      ws.onclose = () => {
+        clearTimeout(timeout)
+      }
+    })
+  }
+
+  function findHeaderEnd(data) {
+    const view = new Uint8Array(data)
+    for (let i = 0; i < view.length - 3; i++) {
+      if (view[i] === 13 && view[i+1] === 10 && view[i+2] === 13 && view[i+3] === 10) {
+        return i + 4
+      }
+    }
+    return -1
+  }
+
+  function generateRequestId() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0
+      const v = c === 'x' ? r : (r & 0x3 | 0x8)
+      return v.toString(16)
+    })
   }
 }
 

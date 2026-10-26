@@ -40,7 +40,8 @@
     "webNavigation"
   ],
   "host_permissions": [
-    "https://translate.google.com/"
+    "https://translate.google.com/",
+    "https://speech.platform.bing.com/"
   ],
   "optional_host_permissions": [
     "http://*/",
