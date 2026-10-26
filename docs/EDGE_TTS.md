@@ -74,6 +74,18 @@ The Edge TTS engine (`EdgeTtsEngine`) follows the same pattern as other TTS engi
 - **Voice List URL**: `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list`
 - **Audio Format**: MP3 (audio/mpeg)
 - **Protocol**: Custom WebSocket protocol with SSML payload
+- **DRM**: Requires Sec-MS-GEC v2 token (CS64+SHA256 digest) and Sec-MS-GEC-Version header
+
+#### DRM Token (Sec-MS-GEC v2)
+
+As of October 2026, Microsoft requires a cryptographic token for all Edge TTS requests:
+
+- **Format**: `<16 hex CS64>-<64 hex SHA256>` (e.g., `8350A5B1232C2B03-103B2FE3AC...`)
+- **Algorithm**: Custom CS64 checksum + modified SHA-256 digest
+- **Input**: Unix timestamp (rounded to 300s) + Windows epoch + TrustedClientToken
+- **Header**: `Sec-MS-GEC-Version: 2-<chromium-version>` (e.g., `2-143.0.3650.75`)
+
+The token generation is implemented in pure JavaScript without external dependencies. The algorithm was reverse-engineered from Microsoft Edge's Read Aloud feature.
 
 ## Differences from Azure TTS
 
