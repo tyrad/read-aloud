@@ -1189,7 +1189,7 @@ function EdgeTtsEngine() {
       throw new Error("Voice missing shortName: " + voice.voiceName)
     }
     return cache.fetchCached(
-      JSON.stringify(["edge-v2", text, shortName]),
+      JSON.stringify(["edge-v3-http", text, shortName]),
       async () => {
         const audioData = await synthesizeSpeech(text, shortName)
         return URL.createObjectURL(audioData)
@@ -1197,76 +1197,124 @@ function EdgeTtsEngine() {
       blobUrl => URL.revokeObjectURL(blobUrl)
     )
   }
+
   async function synthesizeSpeech(text, voiceName) {
-    if (!globalThis.EdgeSecMsGec) throw new Error("EdgeSecMsGec not loaded")
-    const connectionId = generateConnectionId()
-    const timestamp = new Date().toISOString()
-    const gecToken = globalThis.EdgeSecMsGec.generateSecMsGecV2()
+    const endpoint = await getEdgeEndpoint()
+    const url = `https://${endpoint.r}.tts.speech.microsoft.com/cognitiveservices/v1`
+    const ssml = getEdgeSsml(text, voiceName)
     
-    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='${voiceName}'>${escapeXml(text)}</voice></speak>`
-
-    const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&ConnectionId=${connectionId}&Sec-MS-GEC=${gecToken}&Sec-MS-GEC-Version=${globalThis.EdgeSecMsGec.SEC_MS_GEC_VERSION}`
-    
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(wsUrl)
-      const audioChunks = []
-      let timeout
-
-      ws.onopen = () => {
-        timeout = setTimeout(() => {
-          ws.close()
-          reject(new Error("WebSocket timeout"))
-        }, 30000)
-
-        const configMessage = `Path: speech.config\r\nX-Timestamp: ${timestamp}\r\nContent-Type: application/json\r\n\r\n{"context":{"system":{"name":"SpeechSDK","version":"1.12.1-rc.1","build":"JavaScript","lang":"JavaScript"},"os":{"platform":"Browser/Linux x86_64","name":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36","version":"5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"}}}`
-        ws.send(configMessage)
-
-        const ssmlMessage = `Path: ssml\r\nX-RequestId: ${connectionId}\r\nX-Timestamp: ${timestamp}\r\nContent-Type: application/ssml+xml\r\n\r\n${ssml}`
-        ws.send(ssmlMessage)
-      }
-
-      ws.onmessage = (event) => {
-        if (typeof event.data === "string") {
-          if (event.data.includes("Path:turn.end")) {
-            clearTimeout(timeout)
-            ws.close()
-            if (audioChunks.length > 0) {
-              const audioBlob = new Blob(audioChunks, {type: "audio/mp3"})
-              resolve(audioBlob)
-            } else {
-              reject(new Error("No audio data received"))
-            }
-          }
-        } else {
-          const view = new DataView(event.data)
-          if (view.byteLength >= 2) {
-            const headerLength = view.getUint16(0, false)
-            if (view.byteLength >= headerLength + 2) {
-              const audioData = event.data.slice(headerLength + 2)
-              if (audioData.byteLength > 0) {
-                audioChunks.push(audioData)
-              }
-            }
-          }
-        }
-      }
-
-      ws.onerror = (error) => {
-        clearTimeout(timeout)
-        reject(new Error("WebSocket error: " + (error.message || "Unknown")))
-      }
-
-      ws.onclose = () => {
-        clearTimeout(timeout)
-      }
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": endpoint.t,
+        "Content-Type": "application/ssml+xml",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
+        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3"
+      },
+      body: ssml
     })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Edge TTS synthesis failed: ${response.status} ${errorText}`)
+    }
+    
+    const audioBuffer = await response.arrayBuffer()
+    return new Blob([audioBuffer], {type: "audio/mpeg"})
   }
 
-  function generateConnectionId() {
-    const hex = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+  function getEdgeSsml(text, voiceName) {
+    const escapedText = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+    
+    return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
+      <voice name='${voiceName}'>
+        <prosody rate='+0%' pitch='+0Hz' volume='+0%'>${escapedText}</prosody>
+      </voice>
+    </speak>`
+  }
+
+  let edgeTokenCache = null
+
+  async function getEdgeEndpoint() {
+    const now = Date.now() / 1000
+    if (edgeTokenCache && edgeTokenCache.expiredAt && now < edgeTokenCache.expiredAt - 300) {
+      return edgeTokenCache.endpoint
+    }
+
+    const endpointUrl = "https://dev.microsofttranslator.com/apps/endpoint?api-version=1.0"
+    const clientId = Array.from(crypto.getRandomValues(new Uint8Array(16)))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('')
-    return hex
+      .replace(/-/g, '')
+    
+    const signature = await signEdgeRequest(endpointUrl)
+    
+    const response = await fetch(endpointUrl, {
+      method: "POST",
+      headers: {
+        "Accept-Language": "en-US",
+        "X-ClientVersion": "4.0.530a 5fe1dc6c",
+        "X-UserId": "0f04d16a175c411e",
+        "X-HomeGeographicRegion": "en-US",
+        "X-ClientTraceId": clientId,
+        "X-MT-Signature": signature,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Length": "0"
+      }
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get Edge endpoint: ${response.status}`)
+    }
+    
+    const data = await response.json()
+    const jwt = data.t.split(".")[1]
+    const decodedJwt = JSON.parse(atob(jwt))
+    
+    edgeTokenCache = {
+      endpoint: data,
+      expiredAt: decodedJwt.exp
+    }
+    
+    return data
+  }
+
+  async function signEdgeRequest(urlStr) {
+    const url = urlStr.split("://")[1]
+    const encodedUrl = encodeURIComponent(url)
+    const uuidStr = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+      .replace(/-/g, '')
+    const formattedDate = new Date().toUTCString().replace(/GMT/, "").trim() + " GMT"
+    const formattedDateLower = formattedDate.toLowerCase()
+    
+    const bytesToSign = `MSTranslatorAndroidApp${encodedUrl}${formattedDateLower}${uuidStr}`.toLowerCase()
+    const keyBase64 = "oik6PdDdMnOXemTbwvMn9de/h9lFnfBaCWbGMMZqqoSaQaqUOqjVGm5NqsmjcBI1x+sS9ugjB55HEJWRiFXYFw=="
+    const keyBytes = Uint8Array.from(atob(keyBase64), c => c.charCodeAt(0))
+    
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      { name: "HMAC", hash: { name: "SHA-256" } },
+      false,
+      ["sign"]
+    )
+    
+    const signature = await crypto.subtle.sign(
+      "HMAC",
+      cryptoKey,
+      new TextEncoder().encode(bytesToSign)
+    )
+    
+    const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
+    return `MSTranslatorAndroidApp::${signatureBase64}::${formattedDateLower}::${uuidStr}`
   }
 
 }

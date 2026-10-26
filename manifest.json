@@ -4,7 +4,7 @@
   "name": "__MSG_extension_name__",
   "short_name": "__MSG_extension_short_name__",
   "description": "__MSG_extension_description__",
-  "version": "2.25.1",
+  "version": "2.25.2",
   "default_locale": "en",
   "minimum_chrome_version": "99",
 
@@ -28,7 +28,6 @@
   "permissions": [
     "activeTab",
     "contextMenus",
-    "declarativeNetRequestWithHostAccess",
     "identity",
     "offscreen",
     "scripting",
@@ -42,7 +41,9 @@
   ],
   "host_permissions": [
     "https://translate.google.com/",
-    "https://speech.platform.bing.com/"
+    "https://speech.platform.bing.com/",
+    "https://dev.microsofttranslator.com/",
+    "https://*.tts.speech.microsoft.com/"
   ],
   "optional_host_permissions": [
     "http://*/",
