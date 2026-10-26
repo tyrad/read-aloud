@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+/**
+ * Standalone test script for Edge TTS DRM token generation
+ * Verifies js/sec-ms-gec.js against known test vectors
+ * 
+ * Usage:
+ *   node test-edge-drm.js
+ *   node test-edge-drm.js 1729900000.0
+ */
+
+const { generateSecMsGecV2 } = require('./js/sec-ms-gec.js')
+
+const testVectors = [
+  [1729900000.0, "8350A5B1232C2B03-103B2FE3AC01F6E41589E122B054FEAA29908FF87A67426A52501CBAD60BCE89"],
+  [1730000000.0, "50065ABF67B90F95-49BDAF24D28ECEB38DAEEC84DEAA71E91F92945EA8A47921C58FB4F8F79A4F5E"],
+  [1761460000.0, "31BAE098FD5E4C0E-C2D1E32DF3D35F8A7E8350F24531A7E8F7E0DCBFF7C0E0454A65B963981C365D"],
+  [1761463800.0, "3105680A96DB3EAD-DB49EC9268AF74FFE649DD0C1CD2019E7FF3B72C750B8D9CC099549B0D053F62"],
+  [1761465600.0, "E3A8CA4548AD0001-B23273BCED5AAAEE67730CC9F8BC3DE271FE485CA794DB1EE621343AF1F25648"],
+  [1700000000.0, "2CD23A2CA0B2595A-F3C846C370E05F9CC83ACC5F995C5F5D87A4D0F14CE8936A0F902E64099E38A2"],
+  [1800000000.0, "99E54519B490BE5C-E162DB0977FBDCB9B86DD8148BF1BCDC3C0303176CE39852A42B415935C20654"]
+]
+
+function main() {
+  const args = process.argv.slice(2)
+  
+  if (args.length > 0) {
+    const timestamp = parseFloat(args[0])
+    console.log(`Testing timestamp: ${timestamp}`)
+    const token = generateSecMsGecV2(timestamp)
+    console.log(`Generated token: ${token}`)
+    
+    const vector = testVectors.find(([ts]) => ts === timestamp)
+    if (vector) {
+      const [, expected] = vector
+      if (token === expected) {
+        console.log('✅ PASS: Token matches expected vector')
+        process.exit(0)
+      } else {
+        console.log('❌ FAIL: Token mismatch')
+        console.log(`Expected: ${expected}`)
+        console.log(`Got:      ${token}`)
+        process.exit(1)
+      }
+    } else {
+      console.log('⚠️  No test vector for this timestamp')
+      process.exit(0)
+    }
+  }
+  
+  console.log('Testing all known vectors...\n')
+  let passed = 0
+  let failed = 0
+  
+  for (const [timestamp, expected] of testVectors) {
+    const token = generateSecMsGecV2(timestamp)
+    const match = token === expected
+    
+    if (match) {
+      console.log(`✅ ${timestamp}: PASS`)
+      passed++
+    } else {
+      console.log(`❌ ${timestamp}: FAIL`)
+      console.log(`   Expected: ${expected}`)
+      console.log(`   Got:      ${token}`)
+      failed++
+    }
+  }
+  
+  console.log(`\nResults: ${passed} passed, ${failed} failed`)
+  process.exit(failed > 0 ? 1 : 0)
+}
+
+main()
